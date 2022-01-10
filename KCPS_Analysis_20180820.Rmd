@@ -1,0 +1,277 @@
+---
+title: "KCPS Analysis"
+author: "JINYOUNGCHEON"
+date: '2022 1 6 '
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+## 라이브러리 불러오기
+
+데이터 분석시 필요한 라이브러리들을 로딩했다.
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidymodels)
+library(tidyverse)
+library(tidyselect)
+library(magrittr)
+library(skimr)
+library(knitr)
+library(ggplot2)
+library(genio)
+library(readr)
+library(stringr)
+library(gt)
+library(GGally)
+library(patchwork)
+library(naniar)
+library(reshape2)
+```
+
+## 데이터 불러오기
+
+```{r}
+getwd()
+setwd("C:/Users/82106/동계인턴십_Data_1000")
+d1 <- read.table("phenotype_1000.txt", header = T)
+d2 <- read_fam("KCPS_r2_0.01_1000.fam")
+d3 <- read_bim("KCPS_r2_0.01_1000.bim")
+d4 <- read.csv("KCPS_r2_0.01_1000.csv")
+```
+
+## 자료 분석
+
+* ##### d1 자료 분석
+
+```{r}
+str(d1)
+```
+d1의 자료를 보면 66개의 변수, 변수 당 1000개의 데이터가 있는 것을 확인할 수 있다.
+
+* ##### d2 자료 분석
+
+```{r}
+head(d2)
+str(d2)
+```
+d2의 자료를 보면 fam과 id는 가족ID와 본인의 ID로 두개 모두 같은 값임을 알 수 있다.
+pat와 mat는 부계 ID와 모계 ID로 전부 0으로 되어있다.
+sex는 성별로 1은 남성, 2는 여성이다.
+pheno는 표현형임을 의미하며 1은 컨트롤, 2는 case이다.
+
+* ##### d3 자료 분석
+
+```{r}
+head(d3)
+str(d3)
+```
+d3의 자료를 보면 chr는 염색체 번호, id는 변이식별자를 의미하고 있다.
+posg는 Position in morgans or centimorgans pos는 Base-pair 위치 정보를 의미하고 있다.
+ref는 Ref Allele, alt는 Alternative Allele 의미하고 있다.
+
+* ##### d4 자료 분석
+
+```{r}
+str(d4)
+```
+
+
+## 결측치 데이터 확인
+
+```{r}
+colSums(is.na(d1))
+colSums(is.na(d2))
+colSums(is.na(d3))
+sum(is.na(d1))
+```
+phenotype_1000.txt(이하 d1)를 제외한 나머지 데이터에는 NA 값이 없는 것으로 확인된다.
+NA 값들은 제외 및 이상치 처리 기준에 의해 나타나는 것으로 확인된다.
+분석을 진행하기 위해 d1의 NA 값들을 평균값 or 0의 값으로 대체하기로 하였다.
+
+## 결측치 데이터 시각화
+NA가 존재하는 d1을 시각화 한 것은 다음과 같다.
+```{r}
+naniar::gg_miss_var(d1)
+```
+
+## d1 결측치 데이터 전처리
+
+* ##### SMOK_B 변수 전처리
+```{r}
+d1$SMOK_B <- ifelse(!is.na(d1$SMOK_B), d1$SMOK_B, round(mean(d1$SMOK_B, na.rm=T))) # 10개의 이상치, 2로 대체
+```
+SMOK_B 변수는 흡연 유무를 나타내는 변수이다.
+1: 비흡연자 2: 과거흡연자 3: 흡연자를 의미하는데 NA인 값 중에서 SMOK_MOD_B 변수에 값이 있는 경우가 있어, 비흡연자는 아니라고 판단하고 과거흡연자로 전처리를 진행하였다.
+
+* ##### SMOKA_MOD_B 변수 전처리
+```{r}
+length(which(d1$SMOK_B == 1 & is.na(d1$SMOKA_MOD_B)))
+length(which(d1$SMOK_B == 2 & is.na(d1$SMOKA_MOD_B)))
+length(which(d1$SMOK_B == 3 & is.na(d1$SMOKA_MOD_B)))
+```
+SMOKA_MOD_B는 현재 흡연의 흡연량(:개피/하루단위로 정리)을 난타내는 변수이다. 
+비흡연자면서 흡연량이 NA인 경우, 과거흡연자면서 흡연량이 NA인 경우, 흡연자면서 흡연량이 NA인경우 세가지 경우의 이상치를 확인하였다.
+
+```{r}
+d1$SMOKA_MOD_B <- ifelse(d1$SMOK_B == 1 & is.na(d1$SMOKA_MOD_B), 0, d1$SMOKA_MOD_B) # 276개의 이상치, 0로 대체
+d1$SMOKA_MOD_B <- ifelse(d1$SMOK_B == 2 & is.na(d1$SMOKA_MOD_B), round(mean(d1$SMOKA_MOD_B[d1$SMOK_B==2], na.rm=T)), d1$SMOKA_MOD_B) # 41개의 이상치, 13으로 대체
+d1$SMOKA_MOD_B <- ifelse(d1$SMOK_B == 3 & is.na(d1$SMOKA_MOD_B), round(mean(d1$SMOKA_MOD_B[d1$SMOK_B==3], na.rm=T)), d1$SMOKA_MOD_B) # 4개의 이상치, 16으로 대체
+```
+비흡연자면서 흡연량이 NA인 경우는 0으로 값을 대체하였다.
+과거흡연자면서 흡연량이 NA인 경우는 과거흡연자들의 흡연량의 평균값으로 대체하였다. 흡연자도 과거흡연자와 동일한 방법으로 전처리를 진행하였다.
+
+* ##### ALCO_B, ALCO_AMOUT_B 변수 전처리
+```{r}
+x1= table(d1$ALCO_B)
+x1
+i1 = which.max(as.vector(x1))
+i1
+d1$ALCO_B <- ifelse(!is.na(d1$ALCO_B), d1$ALCO_B, i1) # 35개의 이상치, 2로 대체
+d1$ALCO_AMOUNT_B <- ifelse(!is.na(d1$ALCO_AMOUNT_B), d1$ALCO_AMOUNT_B, round(mean(d1$ALCO_AMOUNT_B, na.rm=T))) # 85개의 이상치, 16으로 대체체
+
+```
+ALCO_B 변수는 음주 여부를 의미하며, ALCO_B == 1의 경우 음주를 하는 것이고 ALCO_B == 2의 경우 음주를 하지 않는 것을 의미한다.
+NA값들은 최빈값으로 전처리를 진행하였다.
+
+ALCO_AMOUNT 변수는 음주의 양으로, 1회당 잔수로 환산되었다.
+NA의 경우 평균값으로 전처리를 진행하였다.
+
+* ##### EXER_B 변수 전처리
+```{r}
+x2= table(d1$EXER_B)
+x2
+i2 = which.max(as.vector(x1))
+i2
+d1$EXER_B <- ifelse(!is.na(d1$EXER_B), d1$EXER_B, i2) # 73개의 이상치, 1로 대체
+```
+EXER_B 변수의 경우 '평소에 건강을 위해 규칙적으로 운동을 하고 계십니까?'의 답변으로 
+EXER_B == 1의 경우 예, EXER_B == 2의 경우 아니오이다.
+NA는 최빈값으로 전처리를 진행하였다.
+
+* ##### MDM_B, MHTN_B, MLPD_B, PHTN_B, PDM_B, PLPD_B 변수 전처리
+```{r}
+d1 <- subset(d1, select=-c(MDM_B))
+d1 <- subset(d1, select=-c(MHTN_B))
+d1 <- subset(d1, select=-c(MLPD_B))
+d1 <- subset(d1, select=-c(PHTN_B))
+d1 <- subset(d1, select=-c(PDM_B))
+d1 <- subset(d1, select=-c(PLPD_B))
+```
+MDM_B, MHTN_B, MLPD_B, PHTN_B, PDM_B, PLPD_B 변수들의 경우 뜻을 알지 못해 일단 분석에서 제외하였다.
+
+* ##### HT_B, WT_B, WAIST_B 변수 전처리1
+```{r}
+d1$HT_B <- ifelse(!is.na(d1$HT_B), d1$HT_B, round(mean(d1$HT_B, na.rm=T))) # 2개의 이상치, 166로 대체
+d1$WT_B <- ifelse(!is.na(d1$WT_B), d1$WT_B, round(mean(d1$WT_B, na.rm=T))) # 2개의 이상치, 66로 대체
+d1$WAIST_B <- ifelse(!is.na(d1$WAIST_B), d1$WAIST_B, round(mean(d1$WAIST_B, na.rm=T))) # 29개의 이상치, 82로 대체
+```
+HT_B : 신장(cm), WT_B : 체중(kg), WAIST_B : 허리둘레(cm)
+세 변수 모두 평균값으로 NA 값들을 전처리하였다.
+
+
+* ##### HT_B, WT_B, WAIST_B 변수 전처리2
+
+```{r}
+d1$ABSI_B <- (d1$WAIST_B * 0.3937) / (d1$WT_B/(d1$HT_B/100)^2) * 2/3 * (d1$HT_B/100) * 1/2
+d1 <- subset(d1, select=-c(HT_B))
+d1 <- subset(d1, select=-c(WT_B))
+d1 <- subset(d1, select=-c(WAIST_B))
+d1$HEALTH_B <- ifelse((d1$ABSI_B <= 1.0 & d1$SEX1 == 1) | (d1$ABSI_B <= 0.8 & d1$SEX1 == 2), 0, 1)
+d1 <- subset(d1, select=-c(ABSI_B))
+```
+허리둘레와 키, 몸무게만으로도 복부 내장지방과 건강 상태를 알 수 있는 변수 체형지수(A Body Shape Index)를 추가하고, 나머지 변수는 제거하였다.
+체형지수가 남성은 1.0 이하, 여성은 0.8 이하를 유지해야 건강한 것으로 판단된다. 
+체형지수의 기준에 따라 건강지수(HEALTH_B) 변수를 추가하였다. 이후 ABSI 변수 또한 제거하였다.
+HEALTH_B : 0 건강, HEALTH_B : 1 건강하지 못함.
+
+* ##### SBP_B, DBP_B, CHO_B, LDL_B, TG_B, HDL_B, FBS_B, GOT_B, GPT_B, GGT_B, URIC_B 변수 전처리
+```{r}
+# SBP_B, DBP_B, CHO_B, LDL_B, TG_B, HDL_B, FBS_B, GOT_B, GPT_B, GGT_B, URIC_B 이상치 처리
+d1$SBP_B <- ifelse(!is.na(d1$SBP_B), d1$SBP_B, round(mean(d1$SBP_B, na.rm=T))) # 124개의 이상치, 121로 대체
+d1$DBP_B <- ifelse(!is.na(d1$DBP_B), d1$DBP_B, round(mean(d1$DBP_B, na.rm=T))) # 11개의 이상치, 75로 대체
+d1$CHO_B <- ifelse(!is.na(d1$CHO_B), d1$CHO_B, round(mean(d1$CHO_B, na.rm=T))) # 5개의 이상치, 192로 대체
+d1$LDL_B <- ifelse(!is.na(d1$LDL_B), d1$LDL_B, round(mean(d1$LDL_B, na.rm=T))) # 5개의 이상치, 116로 대체
+d1$TG_B <- ifelse(!is.na(d1$TG_B), d1$TG_B, round(mean(d1$TG_B, na.rm=T))) # 5개의 이상치, 137로 대체
+d1$HDL_B <- ifelse(!is.na(d1$HDL_B), d1$HDL_B, round(mean(d1$HDL_B, na.rm=T))) # 13개의 이상치, 51로 대체
+d1$FBS_B <- ifelse(!is.na(d1$FBS_B), d1$FBS_B, round(mean(d1$FBS_B, na.rm=T))) # 2개의 이상치, 93로 대체
+d1$GOT_B <- ifelse(!is.na(d1$GOT_B), d1$GOT_B, round(mean(d1$GOT_B, na.rm=T))) # 4개의 이상치, 25로 대체
+d1$GPT_B <- ifelse(!is.na(d1$GPT_B), d1$GPT_B, round(mean(d1$GPT_B, na.rm=T))) # 4개의 이상치, 26로 대체
+d1$GGT_B <- ifelse(!is.na(d1$GGT_B), d1$GGT_B, round(mean(d1$GGT_B, na.rm=T))) # 8개의 이상치, 43로 대체
+d1$URIC_B <- ifelse(!is.na(d1$URIC_B), d1$URIC_B, round(mean(d1$URIC_B, na.rm=T))) # 71개의 이상치, 5로 대체
+```
+SBP_B : 수축기혈압(mmHg), DBP_B : 이완기혈압(mmHg), CHO_B : 총콜레스테롤(mg/ dl), LDL_B : 저밀도콜레스테롤(mg/ dl), TG_B : 중성지방(mg/ dl), HDL_B : 고밀도콜레스테롤(mg/ dl), FBS_B : 공복혈당(mg/ dl), GOT_B : AST(IU/L), GPT_B : ALT(IU/L), GGT_B : r-GTP(IU/L), URIC_B : 요산 (mg/ dl)
+모두 평균값으로 NA 값들을 전처리하였다.
+
+* ##### PCAN80 ~ PCAN89 변수 전처리
+```{r}
+d1$PCAN80 <- ifelse(!is.na(d1$PCAN80), d1$PCAN80, 0) # 996개의 이상치, 0으로 대체
+d1$PCAN81 <- ifelse(!is.na(d1$PCAN81), d1$PCAN81, 0) # 985개의 이상치, 0으로 대체
+d1$PCAN82 <- ifelse(!is.na(d1$PCAN82), d1$PCAN82, 0) # 1000개의 이상치, 0으로 대체
+d1$PCAN83 <- ifelse(!is.na(d1$PCAN83), d1$PCAN83, 0) # 999개의 이상치, 0으로 대체
+d1$PCAN84 <- ifelse(!is.na(d1$PCAN84), d1$PCAN84, 0) # 992개의 이상치, 0으로 대체
+d1$PCAN86 <- ifelse(!is.na(d1$PCAN86), d1$PCAN86, 0) # 996개의 이상치, 0으로 대체
+d1$PCAN89 <- ifelse(!is.na(d1$PCAN89), d1$PCAN89, 0) # 982개의 이상치, 0으로 대체
+```
+PCAN은 각 해당하는 암의 과거력으로 NA값들은 과거력이 없는 것으로 판단하여 0으로 대체하였다.
+
+* ##### FCAN80 ~ FCAN89 변수 전처리
+```{r}
+d1$FCAN80 <- ifelse(!is.na(d1$FCAN80), d1$FCAN80, 0) # 970개의 이상치, 0으로 대체
+d1$FCAN81 <- ifelse(!is.na(d1$FCAN81), d1$FCAN81, 0) # 931개의 이상치, 0으로 대체
+d1$FCAN82 <- ifelse(!is.na(d1$FCAN82), d1$FCAN82, 0) # 999개의 이상치, 0으로 대체
+d1$FCAN83 <- ifelse(!is.na(d1$FCAN83), d1$FCAN83, 0) # 977개의 이상치, 0으로 대체
+d1$FCAN84 <- ifelse(!is.na(d1$FCAN84), d1$FCAN84, 0) # 980개의 이상치, 0으로 대체
+d1$FCAN86 <- ifelse(!is.na(d1$FCAN86), d1$FCAN86, 0) # 965개의 이상치, 0으로 대체
+d1$FCAN89 <- ifelse(!is.na(d1$FCAN89), d1$FCAN89, 0) # 989개의 이상치, 0으로 대체
+```
+FCAN은 각 해당하는 암의 가족력으로 NA값들은 가족력이 없는 것으로 판단하여 0으로 대체하였다.
+
+* ##### FEV1, FVC 변수 전처리1
+```{r}
+sum(is.na(d1$FEV1))
+sum(is.na(d1$FVC))
+sum(is.na(d1$FEV1) & is.na(d1$FVC))
+```
+FEV1은 1초간 뱉을 수 있는 호흡량이고, FVC는 강제(노력성)폐활량이다.
+두개의 변수의 결측치가 같은 행에 위치하기 때문에 새로운 변수인 FEV1/FVC의 비율을 분석에 사용하였다.
+
+* #####  FEV1, FVC 변수 전처리2
+```{r}
+d1$FF <- d1$FEV1/d1$FVC
+d1$FF <- ifelse(!is.na(d1$FF), d1$FF, round(mean(d1$FF, na.rm=T),2)) # 431개의 이상치, 0.90로 대체
+d1 <- subset(d1, select=-c(FEV1))
+d1 <- subset(d1, select=-c(FVC))
+```
+FF라는 새로운 변수, FEV1/FVC를 d1에 추가하였다.
+FF의 NA는 평균값으로 전처리 하였다.
+이후, FEV1과 FVC 변수는 제거하였다.
+
+* ##### BIL, WBC, CREAT 변수 전처리
+```{r}
+d1$BIL <- ifelse(!is.na(d1$BIL), d1$BIL, round(mean(d1$BIL, na.rm=T),2)) # 52개의 이상치, 0.88로 대체
+d1$WBC <- ifelse(!is.na(d1$WBC), d1$WBC, round(mean(d1$WBC, na.rm=T),2)) # 72개의 이상치, 6.09로 대체
+d1$CREAT <- ifelse(!is.na(d1$CREAT), d1$CREAT, round(mean(d1$CREAT, na.rm=T),2)) # 38개의 이상치, 0.98로 대체
+```
+BIL : 총빌리루빈(mg/ dl), WBC : 백혈구(X10^3/ ul), CREAT : 크레아티닌(mg/ dl)
+모두 평균값으로 NA 값들을 전처리하였다.
+
+```{r}
+colSums(is.na(d1))
+```
+d1의 NA값들이 없어진 것을 확인할 수 있다.
+이제 d1, d2, d3, d4 모두 NA가 존재하지 않는다.
+
+
+
+## 상관관계 분석
+
+* ##### d1 상관관계 분석
+```{r}
+
+```
+
+
+
+
+
